@@ -403,7 +403,10 @@ search_mem(void)
 	size_t copy_size = chunk_size;
 	unsigned int i;
 	unsigned int state = 0x0c0ffee0;
+	struct timespec ind_start, ind_end;
+	struct timespec burn_start, burn_end;
 
+	clock_gettime(CLOCK_MONOTONIC_RAW, &burn_start);
 	for (i = 0; threads_go == 1; i++) {
 		chunk = rand_num(chunks, &state);
 		src = mem[chunk];
@@ -443,8 +446,14 @@ search_mem(void)
 		} /* end if ! touch_pages */
 
 		free_mem(copy, copy_size);
-		if (sleep_at && !(i % sleep_at))
+		if (sleep_at && !(i % sleep_at)) {
+			clock_gettime(CLOCK_MONOTONIC_RAW, &burn_end);
+			unsigned long delta_us = (burn_end.tv_sec - burn_start.tv_sec) * 1000000 + (burn_end.tv_nsec - burn_start.tv_nsec) / 1000;
+			if (verbose > 1)
+				printf("Burn took: %ld us\n", delta_us);
 			usleep(sleep_interval);
+			clock_gettime(CLOCK_MONOTONIC_RAW, &burn_start);
+		}
 	}
 
 	return (i);
