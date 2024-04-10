@@ -50,6 +50,8 @@
 #include <time.h>
 #include <sys/time.h>
 #include <sys/resource.h>
+#include <sys/syscall.h>
+#include <fcntl.h>
 
 #include "ebizzy.h"
 
@@ -87,6 +89,7 @@ static unsigned int page_size;
 static time_t start_time;
 static volatile int threads_go;
 static unsigned int records_read;
+static int fd;
 
 /* Global local to serialize records aggregation */
 pthread_mutex_t records_count_lock = PTHREAD_MUTEX_INITIALIZER;
@@ -405,6 +408,7 @@ search_mem(void)
 	unsigned int state = 0x0c0ffee0;
 	struct timespec ind_start, ind_end;
 	struct timespec burn_start, burn_end;
+	double elapsed_time;
 
 	clock_gettime(CLOCK_MONOTONIC_RAW, &burn_start);
 	for (i = 0; threads_go == 1; i++) {
@@ -449,8 +453,21 @@ search_mem(void)
 		if (sleep_at && !(i % sleep_at)) {
 			clock_gettime(CLOCK_MONOTONIC_RAW, &burn_end);
 			unsigned long delta_us = (burn_end.tv_sec - burn_start.tv_sec) * 1000000 + (burn_end.tv_nsec - burn_start.tv_nsec) / 1000;
-			if (verbose > 1)
-				printf("Burn took: %ld us\n", delta_us);
+			if (verbose > 1) {
+				elapsed_time = difftime(time(NULL), start_time);
+				printf("Burn took: %ld us RPS: %u\n", delta_us, (unsigned int) (((double) i)/elapsed_time));
+
+				char buffer[100];
+				sprintf(buffer, "%ld;%u\n", delta_us, (unsigned int) (((double) i)/elapsed_time));
+				ssize_t written = syscall(SYS_write, fd, buffer, strlen(buffer));
+
+				if (written == -1) {
+					perror("write");
+					close(fd);
+					exit(1);
+				}
+
+			}
 			usleep(sleep_interval);
 			clock_gettime(CLOCK_MONOTONIC_RAW, &burn_start);
 		}
@@ -475,6 +492,7 @@ thread_run(void *arg)
 
 	pthread_mutex_lock(&records_count_lock);
 	records_read += records_local;
+	printf("Records read: %d: %d\n", records_read, records_local);
 	pthread_mutex_unlock(&records_count_lock);
 
 	if (verbose > 1)
@@ -514,6 +532,12 @@ start_threads(void)
 		}
 	}
 
+	fd = syscall(SYS_open, "record.log", O_WRONLY | O_CREAT, 0644);
+	if (fd == -1) {
+		perror("open");
+		exit(1);
+	}
+
 	/*
 	 * Begin accounting - this is when we actually do the things
 	 * we want to measure. */
@@ -540,6 +564,8 @@ start_threads(void)
 
 	if (verbose)
 		printf("Threads finished\n");
+
+	close(fd);
 
 	printf("%u records/s\n",
 	       (unsigned int) (((double) records_read)/elapsed));
