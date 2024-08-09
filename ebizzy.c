@@ -455,12 +455,23 @@ search_mem(void)
 			unsigned long delta_us = (burn_end.tv_sec - burn_start.tv_sec) * 1000000 + (burn_end.tv_nsec - burn_start.tv_nsec) / 1000;
 			if (verbose > 1) {
 				elapsed_time = difftime(time(NULL), start_time);
+				// print timestamp, delta_us, RPS
+				// get timestamp
+				struct timeval tv;
+				gettimeofday(&tv, NULL);
+				time_t nowtime;
+				struct tm *nowtm;
+				char tmbuf[64], buf[64];
+				nowtime = tv.tv_sec;
+				nowtm = localtime(&nowtime);
+				strftime(tmbuf, sizeof(tmbuf), "%Y-%m-%d %H:%M:%S", nowtm);
+				snprintf(buf, sizeof(buf), "%06ld", tv.tv_usec);
+				printf("%s.%s ", tmbuf, buf);
 				printf("Burn took: %ld us RPS: %u\n", delta_us, (unsigned int) (((double) i)/elapsed_time));
 
 				char buffer[100];
 				sprintf(buffer, "%ld;%u\n", delta_us, (unsigned int) (((double) i)/elapsed_time));
 				ssize_t written = syscall(SYS_write, fd, buffer, strlen(buffer));
-
 				if (written == -1) {
 					perror("write");
 					close(fd);
